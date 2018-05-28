@@ -4,7 +4,7 @@
 
 FROM ubuntu:16.04
 
-MAINTAINER Amazon AI <sage-learner@amazon.com>
+MAINTAINER Richard Chen <richard.chen.1989@gmail.com>
 
 RUN apt-get -y update && apt-get install -y --no-install-recommends \
          wget \
