@@ -13,11 +13,12 @@ from keras.layers import Dropout, Dense
 from keras.wrappers.scikit_learn import KerasClassifier
 from keras.models import Sequential
 
-from sklearn.model_selection import train_test_split
+# from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import GridSearchCV
 
+# Optional
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # These are the paths to where SageMaker mounts interesting things in your
@@ -37,33 +38,24 @@ training_path = os.path.join(input_path, channel_name)
 
 # Process and prepare the data
 def data_process(raw_data):
-    train_data = raw_data
-    for col in train_data.columns:
+    for col in raw_data.columns:
         if col not in ['user_id', 'domain_name']:
-            col_mean = np.nanmean(train_data[col], axis=0)
-            train_data[col].fillna(col_mean, inplace=True)
+            col_mean = np.nanmean(raw_data[col], axis=0)
+            raw_data[col].fillna(col_mean, inplace=True)
 
     # Replace with average age
-    X = train_data.iloc[:, 1:17].values
-    y = train_data.iloc[:, 17].values
+    X = raw_data.iloc[:, 1:len(raw_data.columns)-1].values
+    y = raw_data.iloc[:, len(raw_data.columns)-1].values
 
     # Encoding categorical variables
     labelencoder_X_1 = LabelEncoder()
     X[:, 15] = labelencoder_X_1.fit_transform(X[:, 15])
 
-    # Splitting the dataset into the Training set and Test set
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.25,
-        random_state=0)
-
     # Feature Scaling
     sc = StandardScaler()
-    X_train = sc.fit_transform(X_train)
-    X_test = sc.fit_transform(X_test)
+    X = sc.fit_transform(X)
 
-    return X_train, X_test, y_train, y_test
+    return X, y
 
 
 # Building the ANN
@@ -94,7 +86,7 @@ def build_classifier(optimizer):
 
     # Compiling the ANN
     classifier.compile(
-        optimizer=optimizer, # efficient SGD
+        optimizer=optimizer,
         loss='binary_crossentropy',
         metrics=['accuracy']
     )
@@ -135,19 +127,21 @@ def train():
     print('Starting the training.')
     try:
         raw_data = pd.read_csv(input_path)
-        X_train, X_test, y_train, y_test = data_process(raw_data)
-        optimized_classifier = generate_model(X_train, y_train)
+        X, y = data_process(raw_data)
+        optimized_classifier = generate_model(X, y)
         optimized_classifier.best_estimator_.model.save(
             os.path.join(model_path, 'ann-churn.h5'))
         print('Training is complete.')
     except Exception as e:
-        # Write out an error file. This will be returned as the failureReason in the
-        # DescribeTrainingJob result.
+        # Write out an error file. This will be returned as the failure
+        # Reason in the DescribeTrainingJob result.
         trc = traceback.format_exc()
         with open(os.path.join(output_path, 'failure'), 'w') as s:
             s.write('Exception during training: ' + str(e) + '\n' + trc)
-        # Printing this causes the exception to be in the training job logs, as well.
-        print('Exception during training: ' + str(e) + '\n' + trc, file=sys.stderr)
+        # Printing this causes the exception to be in the training job logs
+        print(
+            'Exception during training: ' + str(e) + '\n' + trc,
+            file=sys.stderr)
         # A non-zero exit code causes the training job to be marked as Failed.
         sys.exit(255)
 

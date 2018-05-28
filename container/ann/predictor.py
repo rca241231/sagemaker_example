@@ -3,27 +3,28 @@
 from __future__ import print_function
 
 import os
-import json
-from keras.models import load_model
 import StringIO
-import sys
-import signal
-import traceback
-
 import flask
-import tensorflow as tf
-from keras import backend as K
 
+import tensorflow as tf
+import numpy as np
 import pandas as pd
+
+from keras import backend as K
+from keras.models import load_model
+from sklearn.preprocessing import StandardScaler
+
+
+
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 
 prefix = '/opt/ml/'
 model_path = os.path.join(prefix, 'model')
 
+
 # A singleton for holding the model. This simply loads the model and holds it.
 # It has a predict function that does a prediction based on the model and the
 # input data.
-
-
 class ScoringService(object):
     model = None                # Where we keep the model when it's loaded
 
@@ -52,6 +53,27 @@ class ScoringService(object):
         with sess.graph.as_default():
             clf = cls.get_model()
             return clf.predict(input)
+
+
+def transform_data(dataset):
+    for col in dataset.columns:
+        if col not in ['user_id', 'domain_name']:
+            col_mean = np.nanmean(dataset[col], axis=0)
+            dataset[col].fillna(col_mean, inplace=True)
+
+    # Replace with average age
+    X = dataset.iloc[:, 1:len(dataset.columns)-1].values
+
+    # Encoding categorical variables
+    # The number of 15 is given for the specific data worked with
+    labelencoder_X_1 = LabelEncoder()
+    X[:, 15] = labelencoder_X_1.fit_transform(X[:, 15])
+
+    # Feature Scaling
+    sc = StandardScaler()
+    X = sc.fit_transform(X)
+
+    return pd.DataFrame(X)
 
 
 # The flask app for serving predictions
@@ -88,9 +110,9 @@ def transformation():
     # Convert from CSV to pandas
     if flask.request.content_type == 'text/csv':
         data = flask.request.data.decode('utf-8')
-        s = StringIO.StringIO(data)
+        X = transform_data(data)
+        s = StringIO.StringIO(X)
         data = pd.read_csv(s, header=None)
-        print(data)
     else:
         return flask.Response(
             response='This predictor only supports CSV data',
